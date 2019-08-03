@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  LambdaAMIBackupFunction
+  version 0.1.0
+
+##################################################
+# Global Parameters
+##################################################
+Globals:
+  Function:
+    Timeout: 900
+    AutoPublishAlias: "latest"
+
+##################################################
+# Parameters
+##################################################
+Parameters:
+  ENV:
+    Type: "String"
+    Default: "Prod"
+  TimeZone:
+    Type: "String"
+    Default: "Asia/Tokyo"
+  NotificationEmail:
+    Type: "String"
+    Default: "hoge@example.com"
+
+
+##################################################
+# Template Output
+##################################################
+#Outputs:
+
+Resources:
+  ##################################################
+  # Lambda Function
+  ##################################################
+  AMIBackupFunction:
+    Type: "AWS::Serverless::Function"
+    Properties:
+      CodeUri: "../../src/"
+      Runtime: "python3.7"
+      Handler: "functions.lambda_function.lambda_handler"
+      MemorySize: 128
+      Timeout: 900
+      Role: !GetAtt FunctionRole.Arn
+      Environment:
+        Variables:
+          TZ: !Ref TimeZone
+          ENV: !Ref ENV
+      Events:
+        Timer:
+          Type: Schedule
+          Properties:
+            Schedule: cron(00 13 * * ? *)
+
+  ##################################################
+  # Lambda Function Log Group
+  ##################################################
+  FunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AMIBackupFunction}"
+      RetentionInDays: 14
+
+  ##################################################
+  # Function Role
+  ##################################################
+  FunctionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: "LambdaAMIBackupFunctionPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+              - Effect: "Allow"
+                Action:
+                  - "ec2:*"
+                Resource:
+                  - "*"
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+
+  Alarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmActions:
+        - !Ref AlarmTopic
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AMIBackupFunction
+      EvaluationPeriods: 1
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Period: 60
+      Statistic: Sum
+      Threshold: '1'

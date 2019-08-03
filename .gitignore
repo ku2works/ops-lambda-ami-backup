@@ -1,0 +1,5 @@
+.idea/
+*.iml
+docs/release-*.txt
+deploy/templates/template-*.yml
+src/vendor/
