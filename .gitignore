@@ -3,3 +3,4 @@
 docs/release-*.txt
 deploy/templates/template-*.yml
 src/vendor/
+deploy/out/
